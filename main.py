@@ -3,7 +3,7 @@ import json
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 
-from savfile import parseSavFile, getSettingValue
+from savfile import parseSavFile, getSettingValue, parseMap
 
 def tileCenterPixel(image_meta,tile_x,tile_y):
 	tile_w = image_meta["tile_w"]
@@ -27,44 +27,44 @@ def tileIsoPolygon(image_meta,tile_x,tile_y):
 	]
 	return points
 
-# Renders green for land and blue for water.
-def renderSimpleLandWater(savefile,im_draw,image_meta):
-	map_w = image_meta["map_w"]
-	map_h = image_meta["map_h"]
-	tile_w = image_meta["tile_w"]
-	tile_h = image_meta["tile_h"]
+def renderTile_SimpleLandWater(tile_data, tile_poly, im_draw, savefile):
 	water = [' ',':']
-	for y in range(map_h):
-		row = savefile["map"]["t%04d"%y]
-		for x in range(map_w):
-			poly = tileIsoPolygon(image_meta, x, y)
-			if row[x] in water:
-				im_draw.polygon(poly, fill=(0,0,255,255))
-			else:
-				im_draw.polygon(poly, fill=(0,255,0,255))
+	if tile_data["t"] in water:
+		im_draw.polygon(tile_poly, fill=(0,0,255,255))
+	else:
+		im_draw.polygon(tile_poly, fill=(0,255,0,255))
 
-# Renders the cultural influence area around cities.
-def renderCulturalInfluenceArea(savefile, im, image_meta):
-	map_w = image_meta["map_w"]
-	map_h = image_meta["map_h"]
-	tile_w = image_meta["tile_w"]
-	tile_h = image_meta["tile_h"]
+def renderTile_CulturalInfluenceArea(tile_data, tile_poly, im_draw, savefile):
+	ownerNum = tile_data["owner"]
+	if ownerNum == "-":
+		return
+	owner = savefile["player%d"%int(ownerNum)]
+	color = (int(owner["color.r"]), int(owner["color.g"]), int(owner["color.b"]),240)
+	im_draw.polygon(tile_poly, fill=color)
+
+def renderTileLayer(savefile, im, image_meta, renderfunc):
 	w = image_meta["w"]
 	h = image_meta["h"]
+	map_w = image_meta["map_w"]
+	map_h = image_meta["map_h"]
+	tiles = parseMap(savefile)["tiles"]
 
 	im2 = Image.new("RGBA", (w,h))
 	draw2 = ImageDraw.Draw(im2)
-	for y in range(map_h):
-		row = savefile["map"]["owner%04d"%y].split(",")
-		for x in range(map_w):
-			if row[x] == "-":
-				continue
-			owner = savefile["player%d"%int(row[x])]
-			color = (int(owner["color.r"]), int(owner["color.g"]), int(owner["color.b"]),240)
-			poly = tileIsoPolygon(image_meta, x, y)
-			draw2.polygon(poly, fill=color)
 
-	im.paste(im2, mask=im2)
+	for y in range(map_h):
+		for x in range(map_w):
+			poly = tileIsoPolygon(image_meta, x, y)
+			renderfunc(tiles[x][y], poly, draw2, savefile)
+	im.paste(im2, mask=im2) # To handle alpha properly
+
+# Renders green for land and blue for water.
+def renderSimpleLandWater(savefile,im,image_meta):
+	renderTileLayer(savefile, im, image_meta, renderTile_SimpleLandWater)
+
+# Renders the cultural influence area around cities.
+def renderCulturalInfluenceArea(savefile, im, image_meta):
+	renderTileLayer(savefile, im, image_meta, renderTile_CulturalInfluenceArea)
 
 # Draws a dot for each city
 def renderCities(savefile, im_draw, image_meta):
@@ -122,7 +122,7 @@ def renderOverview(savefile):
 
 	# Start with the land/water
 	# ' ',':' are water, everything else is land
-	renderSimpleLandWater(savefile, draw, image_meta)
+	renderSimpleLandWater(savefile, im, image_meta)
 
 	# Draw the cultural influence area
 	renderCulturalInfluenceArea(savefile, im, image_meta)

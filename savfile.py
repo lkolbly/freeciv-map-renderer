@@ -1,3 +1,5 @@
+import math
+
 # Turns a table from a dict of columns to a list of rows (the rows become dicts)
 def tableColumnsToDict(table):
 	newtable = []
@@ -8,6 +10,73 @@ def tableColumnsToDict(table):
 			row[c] = table[c][i]
 		newtable.append(row)
 	return newtable
+
+# vector_name is one of "bases", "specials", or "roads"
+def parseMap_Bitvector(sav, ncols, row, tiles, vector_name, rowdata_prefix):
+	nmaps = math.ceil(int(sav["savefile"]["%s_size"%vector_name])/4)
+	for x in range(ncols):
+		tiles[x][row][vector_name] = set()
+	for maj_num in range(nmaps):
+		row_data = sav["map"]["%s%02d_%04d"%(rowdata_prefix,maj_num,row)]
+		for i in range(4):
+			idx = 4*maj_num + i
+			if idx > int(sav["savefile"]["%s_size"%vector_name])/4:
+				continue
+			thing_type = sav["savefile"]["%s_vector"%vector_name][idx]
+			for x in range(ncols):
+				n = int(row_data[x])
+				if n&(1<<i) != 0:
+					#print(thing_type)
+					tiles[x][row][vector_name].add(thing_type)
+
+def parseMap(sav):
+	nrows = int(getSettingValue(sav["settings"]["set"], "ysize"))#int(sav["xsize"])
+	ncols = int(getSettingValue(sav["settings"]["set"], "xsize"))#int(sav["ysize"])
+	tiles = []
+	for i in range(ncols):
+		l = []
+		for j in range(nrows):
+			l.append({})
+		tiles.append(l)
+
+	for y in range(nrows):
+		# Parse the terrain
+		t = sav["map"]["t%04d"%y]
+		for x in range(ncols):
+			#print(x,y)
+			tiles[x][y]["t"] = t[x]
+
+		# Parse the owner
+		owner = sav["map"]["owner%04d"%y].split(",")
+		for x in range(ncols):
+			tiles[x][y]["owner"] = owner[x]
+
+		# Parse the bases
+		# The bases are stored 4 at a time in 4-bit hex characters. If there
+		# are more than 4 types of bases, there will be ceil(n_base_types/4)
+		# maps.
+		parseMap_Bitvector(sav, ncols, y, tiles, "bases", "b")
+
+		# Parse the roads (includes rivers)
+		parseMap_Bitvector(sav, ncols, y, tiles, "roads", "r")
+
+		# Parse the specials
+		parseMap_Bitvector(sav, ncols, y, tiles, "specials", "spe")
+
+		# Parse the resources
+		resources = sav["map"]["res%04d"%y]
+		for x in range(ncols):
+			tiles[x][y]["resource"] = resources[x]
+
+		# Parse the "worked"
+		# Each tile is the ID of the city that works it
+		worked = sav["map"]["worked%04d"%y].split(",")
+		for x in range(ncols):
+			if worked[x] != "-":
+				tiles[x][y]["worked"] = int(worked[x])
+
+		# TODO: Parse the "known"
+	return {"w": ncols, "h": nrows, "tiles": tiles}
 
 def parseSavFile(f):
 	result = {}
