@@ -27,20 +27,57 @@ def tileIsoPolygon(image_meta,tile_x,tile_y):
 	]
 	return points
 
-def renderTile_SimpleLandWater(tile_data, tile_poly, im_draw, savefile):
+def renderTile_SimpleLandWater(tile_data, tile_poly, im_draw, savefile, image_meta):
 	water = [' ',':']
 	if tile_data["t"] in water:
 		im_draw.polygon(tile_poly, fill=(0,0,255,255))
 	else:
 		im_draw.polygon(tile_poly, fill=(0,255,0,255))
 
-def renderTile_CulturalInfluenceArea(tile_data, tile_poly, im_draw, savefile):
+def renderTile_CulturalInfluenceArea(tile_data, tile_poly, im_draw, savefile, image_meta):
 	ownerNum = tile_data["owner"]
 	if ownerNum == "-":
 		return
 	owner = savefile["player%d"%int(ownerNum)]
 	color = (int(owner["color.r"]), int(owner["color.g"]), int(owner["color.b"]),240)
 	im_draw.polygon(tile_poly, fill=color)
+
+# Starting at North and going clockwise
+def iter_neighbor_tiles(x, y, w, h):
+	if x%2 == 0:
+		# This is an even one
+		l = [(0,-2), (0,-1), (1,0), (0,1), (0,2), (-1,1), (-1,0), (-1,-1)]
+	else:
+		# This is an odd one
+		l = [(0,-2), (1,-1), (1,0), (1,1), (0,2), (0,1), (-1,0), (0,-1)]
+	# Assumes wrap in X, nowrap on y
+	for dx,dy in l:
+		newx = x+dx
+		newy = y+dy
+		unwrapped_x = newx
+		unwrapped_y = newy
+		if newx >= w:
+			newx = 0
+		if newx < 0:
+			newx = w-1
+		if newy >= 0 and newy < h:
+			yield newx,newy, unwrapped_x, unwrapped_y
+
+def renderTile_Roads(tile_data, tile_poly, im_draw, savefile, image_meta):
+	if "Road" not in tile_data["roads"]:
+		return
+	# See which neighboring tiles have a road
+	map_w = image_meta["map_w"]
+	map_h = image_meta["map_h"]
+	my_center = tileCenterPixel(image_meta,tile_data["x"], tile_data["y"])
+	for x,y,unwrapped_x,unwrapped_y in iter_neighbor_tiles(tile_data["x"], tile_data["y"], map_w, map_h):
+		if "Road" in savefile["parsed_map"]["tiles"][x][y]["roads"]:
+			# Draw a line from here to there
+			their_center = tileCenterPixel(image_meta,unwrapped_x,unwrapped_y)
+			edge_center = ((their_center[0]+my_center[0])/2, (their_center[1]+my_center[1])/2)
+			im_draw.line([edge_center, my_center], fill=(227,178,86,255), width=5)
+			pass
+		pass
 
 def renderTileLayer(savefile, im, image_meta, renderfunc):
 	w = image_meta["w"]
@@ -55,7 +92,7 @@ def renderTileLayer(savefile, im, image_meta, renderfunc):
 	for y in range(map_h):
 		for x in range(map_w):
 			poly = tileIsoPolygon(image_meta, x, y)
-			renderfunc(tiles[x][y], poly, draw2, savefile)
+			renderfunc(tiles[x][y], poly, draw2, savefile, image_meta)
 	im.paste(im2, mask=im2) # To handle alpha properly
 
 # Renders green for land and blue for water.
@@ -126,6 +163,9 @@ def renderOverview(savefile):
 
 	# Draw the cultural influence area
 	renderCulturalInfluenceArea(savefile, im, image_meta)
+
+	# Draw roads
+	renderTileLayer(savefile, im, image_meta, renderTile_Roads)
 
 	# Draw dots for each city
 	renderCities(savefile, draw, image_meta)

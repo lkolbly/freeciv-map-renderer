@@ -40,6 +40,10 @@ def parseMap(sav):
 		tiles.append(l)
 
 	for y in range(nrows):
+		for x in range(ncols):
+			tiles[x][y]["x"] = x
+			tiles[x][y]["y"] = y
+
 		# Parse the terrain
 		t = sav["map"]["t%04d"%y]
 		for x in range(ncols):
@@ -139,6 +143,7 @@ def parseSavFile(f):
 					else:
 						parts[1] = parts[1].strip("\"'")
 						result[section_name][parts[0]] = parts[1]
+	result["parsed_map"] = parseMap(result)
 	return result
 
 def getSettingValue(settings_table, key):
