@@ -39,12 +39,12 @@ def renderTile_CulturalInfluenceArea(tile_data, tile_poly, im_draw, savefile, im
 	if ownerNum == "-":
 		return
 	owner = savefile["player%d"%int(ownerNum)]
-	color = (int(owner["color.r"]), int(owner["color.g"]), int(owner["color.b"]),240)
+	color = (int(owner["color.r"]), int(owner["color.g"]), int(owner["color.b"]),200)
 	im_draw.polygon(tile_poly, fill=color)
 
 # Starting at North and going clockwise
 def iter_neighbor_tiles(x, y, w, h):
-	if x%2 == 0:
+	if y%2 == 0:
 		# This is an even one
 		l = [(0,-2), (0,-1), (1,0), (0,1), (0,2), (-1,1), (-1,0), (-1,-1)]
 	else:
@@ -78,6 +78,9 @@ def renderTile_Roads(tile_data, tile_poly, im_draw, savefile, image_meta):
 			im_draw.line([edge_center, my_center], fill=(227,178,86,255), width=5)
 			pass
 		pass
+
+def renderTile_Border(tile_data, tile_poly, im_draw, savefile, image_meta):
+	im_draw.polygon(tile_poly, fill=None, outline=(0,0,0,255))
 
 def renderTileLayer(savefile, im, image_meta, renderfunc):
 	w = image_meta["w"]
@@ -117,7 +120,7 @@ def renderCities(savefile, im_draw, image_meta):
 			city_x = int(player["c"]["x"][c_i])
 			city_y = int(player["c"]["y"][c_i])
 			center = tileCenterPixel(image_meta, city_x, city_y)
-			points = [(center[0]-tile_w/2, center[1]-tile_h/2), (center[0]+tile_h/2, center[1]+tile_h/2)]
+			points = [(center[0]-tile_h/2, center[1]-tile_h/2), (center[0]+tile_h/2, center[1]+tile_h/2)]
 			im_draw.ellipse(points, fill=(255,255,255,255))
 
 # Draws a small dot for each unit
@@ -134,7 +137,7 @@ def renderUnits(savefile, im_draw, image_meta):
 			unit_x = int(player["u"]["x"][u_i])
 			unit_y = int(player["u"]["y"][u_i])	
 			center = tileCenterPixel(image_meta, unit_x, unit_y)
-			points = [(center[0]-tile_w/4, center[1]-tile_h/4), (center[0]+tile_w/4,center[1]+tile_h/4)]
+			points = [(center[0]-tile_h/4, center[1]-tile_h/4), (center[0]+tile_h/4,center[1]+tile_h/4)]
 			im_draw.ellipse(points, fill=(255,255,255,255))
 
 # Renders an overview like the minimap in the corner.
@@ -166,6 +169,12 @@ def renderOverview(savefile):
 
 	# Draw roads
 	renderTileLayer(savefile, im, image_meta, renderTile_Roads)
+
+	renderTileLayer(savefile, im, image_meta, renderTile_Border)
+
+	"""for x,y,ux,uy in iter_neighbor_tiles(40,40,map_w,map_h):
+		draw.polygon(tileIsoPolygon(image_meta, x,y), fill=(0,0,0,255))
+	draw.polygon(tileIsoPolygon(image_meta, 40, 41), fill=(255,255,255,255))"""
 
 	# Draw dots for each city
 	renderCities(savefile, draw, image_meta)
