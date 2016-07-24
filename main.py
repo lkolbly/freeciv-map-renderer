@@ -213,7 +213,7 @@ def renderSeries(directory, renderfunc, outfile):
 		# Turn it into a video
 		os.system("ffmpeg -framerate 5 -i %s/%%04d.png %s"%(dirname,outfile))
 
-def renderTimePlot(directory, datafunc, ylabel, outfile):
+def renderTimePlot(directory, datafunc, ylabel, outfile, maxframe):
 	filenames = getValidFilenames(directory)
 
 	players = {}
@@ -232,6 +232,8 @@ def renderTimePlot(directory, datafunc, ylabel, outfile):
 				players[key]["y"].append(datafunc(sav[key]))
 		turnno += 1
 		print("Finished turn %d"%turnno)
+		if turnno > maxframe:
+			break
 
 	# Plot it
 	for k,v in players.items():
@@ -256,6 +258,7 @@ if __name__ == "__main__":
 	parser_graph.add_argument('type', type=str, help='The feature to graph - common ones are: research.techs, nunits, ncities, units_built, units_killed, units_lost')
 	parser_graph.add_argument('directory', type=str, help='The directory to look at')
 	parser_graph.add_argument('outfile', type=str, help='The output image to create.')
+	parser_graph.add_argument('--maxframe', type=int, help='The maximum frame to go to', default=100000)
 
 	args = parser.parse_args()
 	print(args)
@@ -266,4 +269,4 @@ if __name__ == "__main__":
 		im = renderOverview(parseSavFile(f))
 		im.save(args.outfile)
 	elif args.command == "graph":
-		renderTimePlot(args.directory, lambda a: a[args.type], args.type, args.outfile)
+		renderTimePlot(args.directory, lambda a: a[args.type], args.type, args.outfile, args.maxframe)
