@@ -2,6 +2,8 @@ import os, re, tempfile, bz2, argparse
 import json
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
+import progressbar
+import random
 
 from savfile import parseSavFile, getSettingValue, parseMap
 
@@ -145,9 +147,9 @@ def renderUnits(savefile, im_draw, image_meta):
 # Civ's cultural area is colored.
 # White dots for units and cities.
 # Assumes the default ruleset, and the amplio2 tileset where applicable.
-def renderOverview(savefile):
-	w = 1800
-	h = 800
+def renderOverview(savefile, custom_layers=[]):
+	w = 1800*2
+	h = 800*2
 	im = Image.new("RGBA",(w,h))
 	draw = ImageDraw.Draw(im)
 
@@ -172,13 +174,13 @@ def renderOverview(savefile):
 
 	renderTileLayer(savefile, im, image_meta, renderTile_Border)
 
-	"""for x,y,ux,uy in iter_neighbor_tiles(40,40,map_w,map_h):
-		draw.polygon(tileIsoPolygon(image_meta, x,y), fill=(0,0,0,255))
-	draw.polygon(tileIsoPolygon(image_meta, 40, 41), fill=(255,255,255,255))"""
-
 	# Draw dots for each city
 	renderCities(savefile, draw, image_meta)
 	renderUnits(savefile, draw, image_meta)
+
+	# Render any custom layers
+	for layer in custom_layers:
+		layer(savefile, draw, image_meta)
 
 	return im
 
@@ -213,12 +215,13 @@ def renderSeries(directory, renderfunc, outfile):
 		# Turn it into a video
 		os.system("ffmpeg -framerate 5 -i %s/%%04d.png %s"%(dirname,outfile))
 
-def renderTimePlot(directory, datafunc, ylabel, outfile, maxframe):
+def getTimeData(directory, datafunc, maxframe):
 	filenames = getValidFilenames(directory)
 
 	players = {}
 	turnno = 0
-	for fname in filenames:
+	bar = progressbar.ProgressBar()
+	for fname in bar(filenames):
 		f = bz2.open(directory+"/"+fname[0], 'rt')
 		sav = parseSavFile(f)
 		for key in sav.keys():
@@ -231,9 +234,13 @@ def renderTimePlot(directory, datafunc, ylabel, outfile, maxframe):
 				players[key]["x"].append(turnno)
 				players[key]["y"].append(datafunc(sav[key]))
 		turnno += 1
-		print("Finished turn %d"%turnno)
+		#print("Finished turn %d"%turnno)
 		if turnno > maxframe:
 			break
+	return players
+
+def renderTimePlot(directory, datafunc, ylabel, outfile, maxframe):
+	players = getTimeData(directory, datafunc, maxframe)
 
 	# Plot it
 	for k,v in players.items():
@@ -241,6 +248,35 @@ def renderTimePlot(directory, datafunc, ylabel, outfile, maxframe):
 	plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3, fancybox=True, shadow=True, fontsize='small')
 	plt.ylabel(ylabel)
 	plt.savefig(outfile)
+	pass
+
+def dumpTimeData(directory, datafunc, ylabel, outfile, maxframe):
+	players = getTimeData(directory, datafunc, maxframe)
+
+	# Format data
+	datarows = []
+	maxx = 0
+	for k,v in players.items():
+		for x,y in zip(v["x"], v["y"]):
+			#datarows.append(["%s"%x])
+			maxx = max(x, maxx)
+		break
+	for i in range(maxx+1):
+		datarows.append(["%s"%i])
+	for k,v in players.items():
+		for x,y in zip(v["x"], v["y"]):
+			datarows[x].append("%s"%y)
+
+	# Output to CSV file
+	f = open(outfile, "w")
+	f.write("turn,")
+	f.write(",".join(list(map(lambda v: "%s - %s"%(v["name"],ylabel), players.values()))))
+	f.write("\n")
+	for row in datarows:
+		f.write(",".join(row))
+		f.write("\n")
+		#f.write("%s,%s\n"%(row[0], row[1]))
+	f.close()
 	pass
 
 if __name__ == "__main__":
@@ -253,6 +289,7 @@ if __name__ == "__main__":
 	parser_image = subparser.add_parser('frame', help='Render a single frame')
 	parser_image.add_argument('file', type=str, help='The sav file (bz2 compresses) to render.')
 	parser_image.add_argument('outfile', type=str, help='The output image to create.')
+	parser_image.add_argument('--layer', action='append', default=[], help='A python module to load a custom layer from (the function to execute the layer must have the same name as the module itself). Can be specified multiple times.')
 
 	parser_graph = subparser.add_parser('graph', help='Graph something over time')
 	parser_graph.add_argument('type', type=str, help='The feature to graph - common ones are: research.techs, nunits, ncities, units_built, units_killed, units_lost')
@@ -260,13 +297,27 @@ if __name__ == "__main__":
 	parser_graph.add_argument('outfile', type=str, help='The output image to create.')
 	parser_graph.add_argument('--maxframe', type=int, help='The maximum frame to go to', default=100000)
 
+	parser_csv = subparser.add_parser('data', help='Dump CSV data over time')
+	parser_csv.add_argument('type', type=str, help='The feature to dump to the CSV file.')
+	parser_csv.add_argument('directory', type=str, help='The directory to look at')
+	parser_csv.add_argument('outfile', type=str, help='The output image to create.')
+	parser_csv.add_argument('--maxframe', type=int, help='The maximum frame to go to', default=100000)
+
 	args = parser.parse_args()
 	print(args)
 	if args.command == "series":
 		renderSeries(args.directory, renderOverview, args.outfile)
 	elif args.command == "frame":
+		# Load all of the custom layers
+		layers = []
+		for layerName in args.layer:
+			m = __import__(layerName)
+			layers.append(getattr(m, layerName))
+
 		f = bz2.open(args.file, 'rt')
-		im = renderOverview(parseSavFile(f))
+		im = renderOverview(parseSavFile(f), layers)
 		im.save(args.outfile)
 	elif args.command == "graph":
 		renderTimePlot(args.directory, lambda a: a[args.type], args.type, args.outfile, args.maxframe)
+	elif args.command == "data":
+		dumpTimeData(args.directory, lambda a: a[args.type], args.type, args.outfile, args.maxframe)
